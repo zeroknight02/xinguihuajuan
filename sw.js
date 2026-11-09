@@ -1,6 +1,6 @@
 /* 星轨绘卷 Service Worker —— 与 index.html 放在同一目录（GitHub Pages 等 HTTPS 环境）
    缓存名必须与 index.html 的 meta app-build / APP_BUILD 同步，发版时三处一起 +1 */
-const CACHE='xinguihuajuan-v38';
+const CACHE='xinguihuajuan-v43';
 const SHELL=['./','./index.html'];
 
 self.addEventListener('install',e=>{e.waitUntil((async()=>{

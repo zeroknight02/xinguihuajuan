@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6f9f">
-<meta name="app-build" content="38">
+<meta name="app-build" content="43">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -633,7 +633,7 @@ function drawConstellationBG(x,w,h,seed){
     x.fillStyle=g2; x.beginPath(); x.arc(st.x,st.y,st.r*4.2,0,7); x.fill();
     x.fillStyle='#fff'; x.beginPath(); x.arc(st.x,st.y,st.r,0,7); x.fill(); } }
 /* 版本号：APP_VER 功能版本 / APP_BUILD 构建号（与 SW 缓存名、meta app-build 一致，更新时三处同步 +1） */
-const APP_VER='v1.38'; const APP_BUILD=38;
+const APP_VER='v1.43'; const APP_BUILD=43;
 
 function transitMin(km){ if(km==null)return null; return {walk:Math.max(1,Math.round(km/4.5*60)), bike:Math.max(1,Math.round(km/12*60)), drive:Math.max(1,Math.round(km/25*60)), transit:Math.max(2,Math.round(km/18*60)+8)}; }
 const CUR_SYM={CNY:'¥',JPY:'JP¥',USD:'$',EUR:'€',HKD:'HK$',TWD:'NT$',KRW:'₩',THB:'฿',SGD:'S$',GBP:'£',MYR:'RM',VND:'₫'};
@@ -859,24 +859,26 @@ const TYPE_META={
 const DAY_COLORS=['#3d7ea6','#4a7c59','#b26a45','#7a6aa0','#2e8b57','#c07f2d','#5c6b7a','#bf5b4d','#3f8f7a','#8a6a9e','#4c8fb8','#6aa17c'];
 const ARR_KEYS=['trips','items','inspirations','expenses','packingLists','journal','visitedPlaces','phrasebookCustom','packingTemplates'];
 const DB={};
-function loadDB(){ for(const k of ARR_KEYS){ try{ DB[k]=JSON.parse(localStorage.getItem(k))||[]; }catch(e){ DB[k]=[]; } }
-  idbGet('db_items').then(data=>{ if(data){ try{ const idbItems=JSON.parse(data);
-    if(idbItems.length>(DB.items||[]).length){ DB.items=idbItems; renderApp(); } }catch(e){} } }).catch(()=>{});
+function loadDB(){
+  for(const k of ARR_KEYS){ try{ DB[k]=JSON.parse(localStorage.getItem(k))||[]; }catch(e){ DB[k]=[]; } }
+  ARR_KEYS.forEach(k=>{
+    idbGet('db_'+k).then(data=>{
+      if(!data){ if((DB[k]||[]).length) save(k); return; }
+      try{ const arr=JSON.parse(data);
+        if(Array.isArray(arr)&&arr.length>=(DB[k]||[]).length){ DB[k]=arr; renderApp(); } }catch(e){}
+    }).catch(()=>{});
+  });
 }
 const LS_ITEM_CACHE_LIMIT=2000;
 function save(k){
-  if(k==='items'){
-    const data=JSON.stringify(DB.items||[]);
-    const count=(DB.items||[]).length;
-    idbPut('db_items',data).catch(()=>{});
-    if(count<=LS_ITEM_CACHE_LIMIT){
-      try{ localStorage.setItem('items',data); }catch(e){ }
-    } else {
-      try{ localStorage.removeItem('items'); }catch(e){ }
-    }
-    return;
-  }
-  try{ localStorage.setItem(k,JSON.stringify(DB[k]||[])); }catch(e){ toast('存储空间不足，请清理附件或照片'); } }
+  const data=JSON.stringify(DB[k]||[]);
+  const count=(DB[k]||[]).length;
+  idbPut('db_'+k,data).catch(()=>{});
+  if(count<=LS_ITEM_CACHE_LIMIT){
+    try{ localStorage.setItem(k,data); }catch(e){ }
+  } else {
+    try{ localStorage.removeItem(k); }catch(e){ }
+  } }
 function saveAll(){ ARR_KEYS.forEach(save); }
 function getLS(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
 function setLS(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} }
@@ -3293,10 +3295,28 @@ function pageSettings(){
    <div class="card"><div class="card-h"><h3>关于</h3></div>
     <div class="set-row"><div class="sr-main">当前版本<small id="aboutVer">页面 ${APP_VER} · 缓存 v${APP_BUILD} · 服务器 <span id="srvVer">…</span></small></div>
       <button class="btn tiny" data-act="checkUpdate">${I('refresh',13)}检查更新</button></div>
-    <div class="set-row"><div class="sr-main">看不到更新时<small>点「检查更新」；仍不行就删掉主屏幕图标，用 Safari 重新打开一次再添加</small></div></div></div>`,
-  after:()=>{ bindSettingsTools($('#app')); refreshServerVer(); renderTileTip(); } }; }
+    <div class="set-row"><div class="sr-main">存储占用<small id="aboutStore">统计中…</small></div></div>
+    <div class="set-row"><div class="sr-main">记录容量<small id="aboutCap">统计中…</small></div></div></div>`,
+  after:()=>{ bindSettingsTools($('#app')); refreshServerVer(); renderTileTip(); renderAboutStorage(); } }; }
 function renderTileTip(){ const el=$('#tileTip'); if(!el)return;
   const n=getLS('tile_lru',[]).length; el.textContent=n+' 张（断网可看已浏览区域，可随时清理）'; }
+async function renderAboutStorage(){
+  const s1=document.querySelector('#aboutStore'), s2=document.querySelector('#aboutCap');
+  if(!s1&&!s2)return;
+  const cnt=(DB.items||[]).length;
+  let total=0, quota=0, ok=false;
+  try{ if(navigator.storage&&navigator.storage.estimate){
+    const es=await navigator.storage.estimate(); total=es.usage||0; quota=es.quota||0; ok=true; } }catch(e){}
+  if(s1){
+    if(ok){ const pct=quota?(total/quota*100):0;
+      s1.textContent=(total/1048576).toFixed(1)+' MB / '+(quota/1073741824).toFixed(2)+' GB（'
+        +(pct<0.1?'<0.1':pct.toFixed(1))+'%）（已用 / 本机可用配额）';
+    }else s1.textContent='无法读取（浏览器不支持配额查询）'; }
+  if(s2){
+    if(ok){ const cap=Math.floor(quota/2048);
+      s2.textContent=cnt+' 条 / 约 '+Math.round(cap/10000)+' 万条（按每条约 2.0 KB 估算）（已用 / 本机可用）';
+    }else s2.textContent=cnt+' 条'; }
+}
 async function refreshServerVer(){ try{ if(!navigator.onLine){ const el=$('#srvVer'); if(el)el.textContent='离线'; return; }
   const r=await fetch('index.html?nc='+Date.now(),{cache:'no-store'});
   const m=(await r.text()).match(/name="app-build" content="(\d+)"/);
@@ -3371,8 +3391,10 @@ function pageBackup(params){ params.tab=params.tab||'export';
 }
 ACTIONS.bkTab=(d,el)=>{ const p=navStack[navStack.length-1].params; p.tab=d.tab; renderApp(); };
 function backupData(){ const data={};
+  for(const k of ARR_KEYS) data[k]=JSON.stringify(DB[k]||[]);
   for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
-    if(AI_KEYS.includes(k))continue; try{ data[k]=localStorage.getItem(k); }catch(e){} }
+    if(AI_KEYS.includes(k)||ARR_KEYS.includes(k))continue;
+    try{ data[k]=localStorage.getItem(k); }catch(e){} }
   return {app:'travel-planner',version:1,exportedAt:new Date().toISOString(),data}; }
 ACTIONS.doExportBackup=()=>{ download(`travel-backup-${todayStr()}.json`,JSON.stringify(backupData(),null,2),'application/json');
   toast('备份已导出（不含 AI Key）'); };
@@ -3392,11 +3414,11 @@ ACTIONS.pickBackupFile=()=>{ const inp=document.createElement('input'); inp.type
         else memStore.clear(); }catch(e){} }
     let n=0;
     for(const [k,v] of Object.entries(data)){ if(AI_KEYS.includes(k))continue;
-      if(mode==='merge'&&ARR_KEYS.includes(k)){ try{ const cur=JSON.parse(localStorage.getItem(k)||'[]');
-        const inc=JSON.parse(v); if(!Array.isArray(cur)||!Array.isArray(inc))throw new Error('bad');
+      if(ARR_KEYS.includes(k)){ try{ const inc0=JSON.parse(v); if(!Array.isArray(inc0))throw new Error('bad'); const cur=(mode==='merge')?(DB[k]||[]):[];
+        const inc=inc0;
         const ids=new Set(cur.map(x=>x&&x.id));
         const merged=cur.concat(inc.filter(x=>x&&x.id&&!ids.has(x.id)));
-        localStorage.setItem(k,JSON.stringify(merged)); n+=inc.length; continue; }catch(e){} }
+        DB[k]=merged; save(k); n+=inc.length; continue; }catch(e){} }
       try{ localStorage.setItem(k,String(v)); n++; }catch(e){} }
     toast(`备份已导入（${n} 项，${mode==='merge'?'合并':'覆盖'}）`); loadDB(); applyTheme(themeKey()); renderApp(); };
   inp.click(); };
