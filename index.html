@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6f9f">
-<meta name="app-build" content="36">
+<meta name="app-build" content="38">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -633,7 +633,7 @@ function drawConstellationBG(x,w,h,seed){
     x.fillStyle=g2; x.beginPath(); x.arc(st.x,st.y,st.r*4.2,0,7); x.fill();
     x.fillStyle='#fff'; x.beginPath(); x.arc(st.x,st.y,st.r,0,7); x.fill(); } }
 /* 版本号：APP_VER 功能版本 / APP_BUILD 构建号（与 SW 缓存名、meta app-build 一致，更新时三处同步 +1） */
-const APP_VER='v1.36'; const APP_BUILD=36;
+const APP_VER='v1.38'; const APP_BUILD=38;
 
 function transitMin(km){ if(km==null)return null; return {walk:Math.max(1,Math.round(km/4.5*60)), bike:Math.max(1,Math.round(km/12*60)), drive:Math.max(1,Math.round(km/25*60)), transit:Math.max(2,Math.round(km/18*60)+8)}; }
 const CUR_SYM={CNY:'¥',JPY:'JP¥',USD:'$',EUR:'€',HKD:'HK$',TWD:'NT$',KRW:'₩',THB:'฿',SGD:'S$',GBP:'£',MYR:'RM',VND:'₫'};
@@ -1590,17 +1590,18 @@ function curTrip(){ const p=navStack[navStack.length-1].params; return DB.trips.
 ACTIONS.conflictIgnore=d=>{ const t=curTrip(); if(!t)return;
   const arr=getLS('conflict_ignore_'+t.id,[]); if(!arr.includes(d.key))arr.push(d.key);
   setLS('conflict_ignore_'+t.id,arr); renderApp(); };
-ACTIONS.conflictFixTime=d=>{ const cf=findConflict(d.key); if(!cf)return; const b=cf.b;
+ACTIONS.conflictFixTime=d=>{ const cf=findConflict(d.key); if(!cf||!cf.b)return; const b=cf.b;
   const a=itemsOfDay(curTrip().id,cf.d).find(x=>x.id===(cf.b.id)); const list=itemsOfDay(curTrip().id,cf.d);
   const idx=list.indexOf(b); const prev=list[idx-1]; if(!prev)return;
   const prevEnd=toMin(prev.time)+(Number(prev.duration)||60);
   const km=haversine(prev,b); const walk=km!=null?transitMin(km).walk:15;
   b.time=fromMin(prevEnd+walk+5); repositionByTime(b); save('items'); toast('已调整「'+b.title+'」至 '+b.time); renderApp(); };
-ACTIONS.conflictMoveNext=d=>{ const cf=findConflict(d.key); if(!cf)return; const t=curTrip();
+ACTIONS.conflictMoveNext=d=>{ const cf=findConflict(d.key); if(!cf||!cf.b||!curTrip())return; const t=curTrip();
   const b=DB.items.find(x=>x.id===cf.b.id); if(!b)return;
   if(cf.d+1>=tripDays(t)){ toast('已是最后一天，无法后移'); return; }
   b.dayIndex=cf.d+1; b.time=b.time||'09:00'; repositionByTime(b); save('items'); toast('已移到下一天'); renderApp(); };
-ACTIONS.conflictAddHotel=d=>itemTypeForm(DB.trips.find(x=>x.id===d.tripId),Number(d.day),null,{type:'hotel'});
+ACTIONS.conflictAddHotel=d=>{ const t=DB.trips.find(x=>x.id===d.tripId); if(!t||d.day==null)return;
+  itemTypeForm(t,Number(d.day),null,{type:'hotel'}); };
 
 /* 拖拽（桌面 HTML5 DnD + 手机长按 touch） */
 function enableItemDrag(t){ let dragId=null;
@@ -3286,7 +3287,9 @@ function pageSettings(){
     <div class="set-row"><div class="sr-main">打开导航使用<small>行程卡片与地图上的「打开导航」链接</small></div>
       <select id="setNav" style="width:120px"><option value="amap">高德地图</option><option value="google">Google Maps</option></select></div>
     <div class="set-row"><div class="sr-main">清除全部数据<small>删除本机所有行程、攻略与设置，不可恢复</small></div>
-      <button class="btn small danger" data-act="wipeAll">清除</button></div></div>
+      <button class="btn small danger" data-act="wipeAll">清除</button></div>
+    <div class="set-row"><div class="sr-main">重新载入示范数据<small>清空当前数据，灌入 3 个行程与 35+ 条目的演示内容</small></div>
+      <button class="btn small" data-act="seedDemo">载入</button></div></div>
    <div class="card"><div class="card-h"><h3>关于</h3></div>
     <div class="set-row"><div class="sr-main">当前版本<small id="aboutVer">页面 ${APP_VER} · 缓存 v${APP_BUILD} · 服务器 <span id="srvVer">…</span></small></div>
       <button class="btn tiny" data-act="checkUpdate">${I('refresh',13)}检查更新</button></div>
@@ -3324,6 +3327,15 @@ ACTIONS.aiSave=()=>{ localStorage.setItem('ai_endpoint',$('#aiEp').value.trim())
   toast('AI 配置已保存（仅本机）'); };
 ACTIONS.wipeAll=async()=>{ if(!await confirmDlg('确定清除本机全部数据？此操作不可恢复，建议先导出备份。',{okText:'清除全部',danger:true}))return;
   for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); try{localStorage.removeItem(k);}catch(e){} }
+  // 关键：清空后立刻写回播种标记，否则刷新时 seedDemoV5() 会把示范数据重新灌进来
+  try{ localStorage.setItem('seeded_v2','1'); localStorage.setItem('wiped_at',String(Date.now())); }catch(e){}
+  try{ const db=await idb(); if(db){ await new Promise(res=>{ try{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').clear();
+    tx.oncomplete=()=>res(); tx.onerror=()=>res(); tx.onabort=()=>res(); }catch(e){res();} }); }
+    else memStore.clear(); }catch(e){}
+  location.reload(); };
+ACTIONS.seedDemo=async()=>{ if(!await confirmDlg('重新载入示范数据？会先清空当前所有数据，再灌入 3 个行程、35+ 条目的演示内容。',{okText:'载入示范',danger:true}))return;
+  for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); try{localStorage.removeItem(k);}catch(e){} }
+  // 故意不写回 seeded_v2：刷新后 seedDemoV5() 会重新播种
   try{ const db=await idb(); if(db){ await new Promise(res=>{ try{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').clear();
     tx.oncomplete=()=>res(); tx.onerror=()=>res(); tx.onabort=()=>res(); }catch(e){res();} }); }
     else memStore.clear(); }catch(e){}
