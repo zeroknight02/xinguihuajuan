@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2f6f9f">
-<meta name="app-build" content="34">
+<meta name="app-build" content="36">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -513,6 +513,7 @@ kbd{background:var(--card2);border:1px solid var(--card-border);border-bottom-wi
 .ph-row .ph-copy{flex:none}
 
 /* ============ 设置 / 备份 ============ */
+.fx-sep{height:1px;background:var(--line);margin:12px 0}
 .set-row{display:flex;align-items:center;gap:10px;padding:12px 2px;border-bottom:1px solid var(--line);font-size:14px}
 .set-row .sr-main{flex:1;min-width:0}
 .set-row .sr-main small{display:block;color:var(--text-sub);font-size:12px;margin-top:2px}
@@ -632,7 +633,7 @@ function drawConstellationBG(x,w,h,seed){
     x.fillStyle=g2; x.beginPath(); x.arc(st.x,st.y,st.r*4.2,0,7); x.fill();
     x.fillStyle='#fff'; x.beginPath(); x.arc(st.x,st.y,st.r,0,7); x.fill(); } }
 /* 版本号：APP_VER 功能版本 / APP_BUILD 构建号（与 SW 缓存名、meta app-build 一致，更新时三处同步 +1） */
-const APP_VER='v1.34'; const APP_BUILD=34;
+const APP_VER='v1.36'; const APP_BUILD=36;
 
 function transitMin(km){ if(km==null)return null; return {walk:Math.max(1,Math.round(km/4.5*60)), bike:Math.max(1,Math.round(km/12*60)), drive:Math.max(1,Math.round(km/25*60)), transit:Math.max(2,Math.round(km/18*60)+8)}; }
 const CUR_SYM={CNY:'¥',JPY:'JP¥',USD:'$',EUR:'€',HKD:'HK$',TWD:'NT$',KRW:'₩',THB:'฿',SGD:'S$',GBP:'£',MYR:'RM',VND:'₫'};
@@ -882,14 +883,21 @@ function setLS(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){}
 
 /* 汇率：优先联网自动（open.er-api.com，12h 刷新），手动设置为离线回退（相对 CNY） */
 function fxRates(){ return getLS('fx_rates',{USD:7.12,JPY:0.0475,EUR:7.75,HKD:0.92,TWD:0.225,KRW:0.0052,THB:0.202,SGD:5.32,GBP:9.05,MYR:1.55,VND:0.00028}); }
-function fxActiveRates(){ const a=getLS('fx_rates_auto',null); return (a&&a.rates)?a.rates:fxRates(); }
+function fxActiveRates(){ const a=getLS('fx_rates_auto',null);
+  if(a&&a.rates){
+    if(!a.fixed&&a.rates.USD&&a.rates.USD<1){
+      const nr={CNY:1};
+      for(const k in a.rates)if(k!=='CNY'&&a.rates[k])nr[k]=Math.round((1/a.rates[k])*1e5)/1e5;
+      setLS('fx_rates_auto',{rates:nr,at:a.at,fixed:1}); return nr; }
+    return a.rates; }
+  return fxRates(); }
 function fxAutoAge(){ const a=getLS('fx_rates_auto',null); return a?a.at:0; }
 async function fxAutoUpdate(force){ if(!navigator.onLine)return false;
   const at=fxAutoAge(); if(!force&&at&&Date.now()-at<12*3600*1000)return true;
   try{ const r=await fetch('https://open.er-api.com/v6/latest/CNY'); const j=await r.json();
     if(!j||!j.rates)throw new Error('响应异常');
-    const nr={CNY:1}; for(const k of CURS)if(k!=='CNY'&&j.rates[k]!=null)nr[k]=Math.round(j.rates[k]*1e5)/1e5;
-    setLS('fx_rates_auto',{rates:nr,at:Date.now()});
+    const nr={CNY:1}; for(const k of CURS)if(k!=='CNY'&&j.rates[k])nr[k]=Math.round((1/j.rates[k])*1e5)/1e5;
+    setLS('fx_rates_auto',{rates:nr,at:Date.now(),fixed:1});
     const hist=getLS('fx_history',[]); hist.push({date:new Date().toISOString().slice(0,10),rates:nr});
     if(hist.length>30)hist.splice(0,hist.length-30);
     setLS('fx_history',hist); return true; }catch(e){ return false; } }
@@ -1184,9 +1192,8 @@ function pageHome(){ const active=DB.trips.filter(t=>!t.archived&&tripStatus(t)!
      <span class="mh-ar">${I('chevR',18)}</span>
    </button>
    <div class="mini-links">
-     <button class="chip" data-act="goPage" data-page="guide" style="border-color:var(--primary);color:var(--primary)">${I('bulb',15)} 功能导览（先看我）</button>
      <button class="chip" data-act="globalSearch">${I('search',15)} 全局搜索</button>
-     <button class="chip" data-act="goPage" data-page="phrasebook">${I('globe',15)} 常用语手册</button>
+     <button class="chip" data-act="goPage" data-page="tools">${I('gear',15)} 工具</button>
    </div>
    <div class="data-acts">
      <button data-act="goPage" data-page="settings">${I('gear',21)}<span>设置</span></button>
@@ -3202,10 +3209,9 @@ ACTIONS.phAdd=()=>{ const cats=PHRASEBOOK.map(p=>p.cat);
 ACTIONS.phDel=d=>{ DB.phrasebookCustom=DB.phrasebookCustom.filter(x=>x.id!==d.id); save('phrasebookCustom'); renderApp(); toast('已删除'); };
 
 /* ==================== 设置 ==================== */
-function pageSettings(){ const home=getLS('home_coords',null), comp=getLS('company_coords',null);
+function pageTools(){ const home=getLS('home_coords',null), comp=getLS('company_coords',null);
   const notifPerm=('Notification' in window)?Notification.permission:'unsupported';
-  let usage=0; try{ for(const k in localStorage)if(localStorage.hasOwnProperty(k))usage+=(localStorage[k]||'').length*2; }catch(e){}
-  return { html: topbar('同步设置','')
+  return { html: topbar('工具','常用小工具都在这儿')
   +`<div class="card"><div class="card-h"><h3>出发提醒</h3></div>
     <div class="set-row"><div class="sr-main">系统通知<small>前一天 / 当天提醒；离家 200 米提醒需授权定位，仅应用活跃时检查</small></div>
       <button class="btn small ${notifPerm==='granted'?'soft':''}" data-act="notifPerm">${notifPerm==='granted'?'已授权':'授权通知'}</button></div></div>
@@ -3221,34 +3227,25 @@ function pageSettings(){ const home=getLS('home_coords',null), comp=getLS('compa
     <div class="tiny mt8">保存在本机，行程详情「目的地锦囊」中展示并可一键拨号。</div></div>
    <div class="card"><div class="card-h"><h3>证件与保险</h3>
       <div class="h-act"><button class="btn small soft" data-act="docCenterAdd">${I('plus',12)}添加</button></div></div>
+    <div class="set-row"><div class="sr-main">护照有效期<small id="setPpTip">到期前 6 个月内会提醒</small></div>
+      <input type="date" id="setPassport" style="width:150px"></div>
     <div id="docCenterList"></div>
-    <div class="tiny mt8">到期前 90 天会在首页横幅提醒；数据仅存本机。</div></div>
-   <div class="card"><div class="card-h"><h3>AI 攻略解析（仅电脑端）</h3></div>
-    <label class="f-label">接口地址（OpenAI 兼容）</label><input id="aiEp" value="${esc(localStorage.getItem('ai_endpoint')||'https://api.openai.com/v1/chat/completions')}">
-    <label class="f-label">模型</label><input id="aiModel" value="${esc(localStorage.getItem('ai_model')||'gpt-4o-mini')}">
-    <label class="f-label">API Key（仅存本机 localStorage）</label><input id="aiKey" type="password" value="${esc(localStorage.getItem('ai_key')||'')}">
-    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn small primary" data-act="aiSave">保存</button></div>
-    <div class="tiny mt8">请求格式：POST {endpoint}，Header Authorization: Bearer Key，Body {model, messages:[...]}。Key 不会进入备份文件。</div></div>
-   <div class="card"><div class="card-h"><h3>数据</h3></div>
-    <div class="set-row"><div class="sr-main">参考汇率<small id="fxUpdText">${esc((typeof fxUpdatedAtText==='function'?fxUpdatedAtText():''))} · 可手动编辑或在线更新</small></div>
+    <div class="tiny mt8">证件到期前 90 天、护照到期前 6 个月会在首页横幅提醒；数据仅存本机。</div></div>
+   <div class="card"><div class="card-h"><h3>汇率与退税</h3></div>
+    <div class="set-row"><div class="sr-main">参考汇率<small id="fxUpdText">${esc((typeof fxUpdatedAtText==='function'?fxUpdatedAtText():''))}</small></div>
       <button class="btn small" data-act="fxUpdateOnline">${I('refresh',12)}在线更新</button>
       <button class="btn small" data-act="fxEdit">编辑</button></div>
-    <div class="set-row"><div class="sr-main">本地占用<small>localStorage 约 ${(usage/1024/1024).toFixed(2)} MB；附件/封面/照片在 IndexedDB</small></div>
-      <button class="btn small" data-act="goPage" data-page="backup">备份</button></div>
-    <div class="set-row"><div class="sr-main">护照有效期<small id="setPpTip">到期前 6 个月内将提醒</small></div>
-      <input type="date" id="setPassport" style="width:150px" data-save="passport_expiry"></div>
-    <div class="set-row"><div class="sr-main">中国地图底图<small>高德为国内底图（GCJ-02 纠偏自动生效），国际源为默认</small></div>
-      <select id="setBasemap" style="width:120px"><option value="intl">国际源</option><option value="gaode">高德</option></select></div>
-    <div class="set-row"><div class="sr-main">打开导航使用<small>行程卡片与地图上的「打开导航」链接</small></div>
-      <select id="setNav" style="width:120px"><option value="amap">高德地图</option><option value="google">Google Maps</option></select></div>
-    <div class="set-row"><div class="sr-main">清除全部数据<small>删除本机所有行程、攻略与设置，不可恢复</small></div>
-      <button class="btn small danger" data-act="wipeAll">清除</button></div></div>
-   <div class="card"><div class="card-h"><h3>汇率换算（离线，手动汇率）</h3></div>
+    <div class="fx-sep"></div>
+    <label class="f-label">汇率换算（离线）</label>
     <div class="f-2"><div><label class="f-label">金额</label><input id="cvcAmt" type="number" inputmode="decimal" value="100"></div>
     <div><label class="f-label">币种</label><div class="row"><select id="cvcFrom"></select>${I('refresh',14)}<select id="cvcTo"></select></div></div></div>
     <div class="row mt8" style="font-size:17px"><b id="cvcOut">—</b></div>
     <label class="f-label">反向换算金额</label>
-    <div class="row"><input id="cvcBack" type="number" inputmode="decimal" placeholder="填入对方币种金额" style="flex:1"><b id="cvcOut2" style="min-width:90px;text-align:right">—</b></div></div>
+    <div class="row"><input id="cvcBack" type="number" inputmode="decimal" placeholder="填入对方币种金额" style="flex:1"><b id="cvcOut2" style="min-width:90px;text-align:right">—</b></div>
+    <div class="fx-sep"></div>
+    <div id="taxBox"></div>
+    <div class="fx-sep"></div>
+    <div id="fxHistBox"></div></div>
    <div class="card"><div class="card-h"><h3>单位换算（离线）</h3></div>
     <div class="f-2"><div><label class="f-label">公里</label><input id="uKm" inputmode="decimal" placeholder="km"></div>
     <div><label class="f-label">英里</label><input id="uMi" inputmode="decimal" placeholder="mi"></div></div>
@@ -3259,18 +3256,44 @@ function pageSettings(){ const home=getLS('home_coords',null), comp=getLS('compa
     <div class="f-2"><div><label class="f-label">升</label><input id="uL" inputmode="decimal"></div>
     <div><label class="f-label">加仑(美)</label><input id="uGal" inputmode="decimal"></div></div></div>
    <div class="card"><div class="card-h"><h3>集合时间换算</h3></div><div id="tzConvBox"></div></div>
-   <div class="card"><div class="card-h"><h3>退税计算器</h3></div><div id="taxBox"></div></div>
-   <div class="card"><div class="card-h"><h3>汇率历史</h3></div><div id="fxHistBox"></div></div>
-   <div class="card"><div class="card-h"><h3>存储空间</h3></div><div id="storageBox"></div></div>
+   <div class="card"><div class="card-h"><h3>离线常用语手册</h3></div>
+    <div class="set-row"><div class="sr-main">60 条中英对照 + 自定义<small>分类筛选、复制、全屏大字展示、语音朗读</small></div>
+      <button class="btn small" data-act="goPage" data-page="phrasebook">打开</button></div></div>
+   <div class="card"><div class="card-h"><h3>AI 攻略解析（仅电脑端）</h3></div>
+    <label class="f-label">接口地址（OpenAI 兼容）</label><input id="aiEp" value="${esc(localStorage.getItem('ai_endpoint')||'https://api.openai.com/v1/chat/completions')}">
+    <label class="f-label">模型</label><input id="aiModel" value="${esc(localStorage.getItem('ai_model')||'gpt-4o-mini')}">
+    <label class="f-label">API Key（仅存本机 localStorage）</label><input id="aiKey" type="password" value="${esc(localStorage.getItem('ai_key')||'')}">
+    <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn small primary" data-act="aiSave">保存</button></div>
+    <div class="tiny mt8">请求格式：POST {endpoint}，Header Authorization: Bearer Key，Body {model, messages:[...]}。Key 不会进入备份文件。</div></div>`,
+  after:()=>{ bindToolsPage($('#app')); } }; }
+function bindToolsPage(root){ if(!root)return;
+  bindConverters(root);
+  const pe=root.querySelector('#setPassport');
+  if(pe){ pe.value=localStorage.getItem('passport_expiry')||'';
+    pe.addEventListener('change',()=>{ localStorage.setItem('passport_expiry',pe.value); toast(pe.value?'已保存护照有效期':'已清除'); }); }
+  try{ renderDocCenter(); }catch(e){}
+  try{ renderTaxCalc(); }catch(e){}
+  try{ renderTzConverter(); }catch(e){}
+  try{ renderFxHistory(); }catch(e){}
+}
+function pageSettings(){
+  return { html: topbar('同步设置','')
+  +`<div class="card"><div class="card-h"><h3>数据</h3></div>
+    <div class="set-row"><div class="sr-main">地图瓦片缓存<small id="tileTip">统计中…</small></div>
+      <button class="btn small" data-act="storageClearTiles">清理</button></div>
+    <div class="set-row"><div class="sr-main">中国地图底图<small>高德为国内底图（GCJ-02 纠偏自动生效），国际源为默认</small></div>
+      <select id="setBasemap" style="width:120px"><option value="intl">国际源</option><option value="gaode">高德</option></select></div>
+    <div class="set-row"><div class="sr-main">打开导航使用<small>行程卡片与地图上的「打开导航」链接</small></div>
+      <select id="setNav" style="width:120px"><option value="amap">高德地图</option><option value="google">Google Maps</option></select></div>
+    <div class="set-row"><div class="sr-main">清除全部数据<small>删除本机所有行程、攻略与设置，不可恢复</small></div>
+      <button class="btn small danger" data-act="wipeAll">清除</button></div></div>
    <div class="card"><div class="card-h"><h3>关于</h3></div>
     <div class="set-row"><div class="sr-main">当前版本<small id="aboutVer">页面 ${APP_VER} · 缓存 v${APP_BUILD} · 服务器 <span id="srvVer">…</span></small></div>
       <button class="btn tiny" data-act="checkUpdate">${I('refresh',13)}检查更新</button></div>
-    <div class="set-row"><div class="sr-main">存储占用<small id="aboutStore">统计中…</small></div></div>
-    <div class="set-row"><div class="sr-main">记录容量<small id="aboutCap">统计中…</small></div></div>
     <div class="set-row"><div class="sr-main">看不到更新时<small>点「检查更新」；仍不行就删掉主屏幕图标，用 Safari 重新打开一次再添加</small></div></div></div>`,
-  after:()=>{ bindSettingsTools($('#app')); refreshServerVer();
-    [['renderTzConverter'],['renderStorageBox'],['renderFxHistory'],['renderAboutStorage']].forEach(pair=>{
-      const fn=pair[0]; try{ if(typeof window[fn]==='function')window[fn](); }catch(e){} }); } }; }
+  after:()=>{ bindSettingsTools($('#app')); refreshServerVer(); renderTileTip(); } }; }
+function renderTileTip(){ const el=$('#tileTip'); if(!el)return;
+  const n=getLS('tile_lru',[]).length; el.textContent=n+' 张（断网可看已浏览区域，可随时清理）'; }
 async function refreshServerVer(){ try{ if(!navigator.onLine){ const el=$('#srvVer'); if(el)el.textContent='离线'; return; }
   const r=await fetch('index.html?nc='+Date.now(),{cache:'no-store'});
   const m=(await r.text()).match(/name="app-build" content="(\d+)"/);
@@ -3309,12 +3332,14 @@ ACTIONS.wipeAll=async()=>{ if(!await confirmDlg('确定清除本机全部数据�
 /* ==================== 导入 / 导出 / 备份 ==================== */
 const AI_KEYS=['ai_key','ai_endpoint','ai_model'];
 function pageBackup(params){ params.tab=params.tab||'export';
+  let _usage=0; try{ for(const k in localStorage)if(localStorage.hasOwnProperty(k))_usage+=(localStorage[k]||'').length*2; }catch(e){}
   const tabs=[['export','导出备份'],['restore','导入备份'],['import','导入数据']];
   let body='';
   if(params.tab==='export'){ body=`<div class="card">
     <div class="card-h"><h3>导出备份</h3></div>
     <p class="tiny">包含行程、条目、灵感、账目、打包、日记、主题、假期、足迹、常用语等全部本地数据；<b>不含 AI Key</b>。</p>
     <button class="btn primary block mt8" data-act="doExportBackup">${I('down',15)}导出全部备份（JSON）</button>
+    <div class="set-row"><div class="sr-main">本机占用<small>localStorage 约 ${(_usage/1024/1024).toFixed(2)} MB；附件 / 封面 / 照片存在 IndexedDB</small></div></div>
     <div class="trip-sec-title">单行程导出</div>
     ${DB.trips.map(t=>`<div class="set-row"><div class="sr-main">${esc(t.title)}<small>${fmtMD(t.startDate)} · ${itemsOf(t.id).length} 项</small></div>
       <button class="btn tiny" data-act="exportTripJson" data-id="${t.id}">JSON</button>
@@ -3887,17 +3912,13 @@ ACTIONS.docCenterAdd=d=>{
     setLS('docs_center',list); m.close(); renderDocCenter(); toast('已添加'); }; };
 ACTIONS.docCenterDel=d=>{ setLS('docs_center',docCenterList().filter(x2=>x2.id!==d.id)); renderDocCenter(); toast('已删除'); };
 function bindSettingsTools(root){ if(!root)return;
-  bindConverters(root);
   const ep=root.querySelector('#setNav');
   if(ep){ ep.value=localStorage.getItem('nav_provider')||'amap';
     ep.addEventListener('change',()=>{ localStorage.setItem('nav_provider',ep.value); toast('导航已切换为 '+ (ep.value==='google'?'Google Maps':'高德地图')); }); }
   const bm=root.querySelector('#setBasemap');
   if(bm){ bm.value=localStorage.getItem('map_basemap')||'intl';
     bm.addEventListener('change',()=>{ localStorage.setItem('map_basemap',bm.value); toast('底图已切换，地图刷新后生效'); renderApp(); }); }
-  const pe=root.querySelector('#setPassport');
-  if(pe){ pe.value=localStorage.getItem('passport_expiry')||'';
-    pe.addEventListener('change',()=>{ localStorage.setItem('passport_expiry',pe.value); toast(pe.value?'已保存护照有效期':'已清除'); }); }
-  renderTaxCalc(); renderDocCenter(); }
+}
 </script>
 <style>
 /* 打印视图：只输出行程正文 */
@@ -3926,95 +3947,6 @@ function bindSettingsTools(root){ if(!root)return;
 </style>
 <script>
 /* ==================== 功能导览页 ==================== */
-const GUIDE_SECS=[
- {ic:'home',t:'首页与功能入口',d:'待出发大卡 + 全部功能入口',
-  s:['首页瓷贴区显示「待出发」大卡：目的地、出发时间、剩余 X 天 X 小时（三行等权重排版，纯展示）','「灵感池」瓷贴只显示即将出发这趟行程的相关灵感及标题预览；点击瓷贴跳转灵感池并自动按「🧳 行程优先」排序（相关未安排在前、附近次之）；完整灵感池从下方入口进入，内容不受影响','瓷贴与四角按钮分别跳转预算/打包等模块'],
-  demo:'示范：大理行程待出发大卡（剩余 19 天）；灵感池瓷贴显示与大理相关的 3 条灵感，点击后按行程优先排序',go:['home',{}]},
- {ic:'palette',t:'主题切换（7 套，含深色模式）',d:'右上角圆形按钮，一键换肤并记住选择',
-  s:['点首页右上角圆形调色板按钮 → 浮出色块条','点任一色块立即生效（浮层不关闭，可连续试）；Esc 或点外部关闭','刷新后保持，偏好存 localStorage','「暗夜 night」为深色模式，适合夜间查看行程'],
-  demo:'7 套：海雾蓝 / 竹林青 / 晨雾灰 / 陶土暖 / 墨韵 / 教堂绿 / 暗夜（深色）',go:['home',{}]},
- {ic:'globe',t:'目的地锦囊（时差/插座/紧急/日出）',d:'按目的地国家显示实用信息 + 当地时间/日出日落',
-  s:['打开行程详情即自动识别国家：插座类型/电压、紧急电话、小费习惯、SIM 建议（内置 20 国）','当地实时时钟与和家的时差；时差 ≥4 小时给倒时差建议','日出/日落按坐标本地计算；电脑联网时下方还有「目的地天气预报」卡','设置里填「紧急联系人」后显示在锦囊卡，可一键拨号'],
-  demo:'示范：京都行程显示日本插座/110V、报警 110 急救 119、时差 +1 小时、当日日出日落',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'map',t:'行程规划 · 列表',d:'新建、编辑、复制（完整/仅结构）、归档、生成封面',
-  s:['右上「+新建」填名称/目的地/日期/币种/预算/同行者','卡片右下 ⋯ 菜单：复制行程（可选“只复制结构”清空费用与预订号）、生成封面图、导出 JSON/日历、打印 PDF、归档、删除','归档的行程在列表底部折叠展开'],
-  demo:'示范：京都（已结束，可看回顾）、大理（待出发）、上海 Citywalk（已归档，去列表底部展开）；京都已生成封面图',go:['trips',{}]},
- {ic:'clock',t:'时间轴（地铁风格）',d:'按天分色的时间轴：拖拽排序、交通段、节奏与缺口提示',
-  s:['左侧竖线=天，圆点=条目（住宿是方块）；相邻有坐标的条目间显示步行/骑行/驾车/公交估算（≤5km 显示全部）','拖卡片上的 ⋮⋮ 手柄重排或跨天（手机长按 0.5 秒后拖动），立即保存','日头显示节奏标签（轻松/正常/较满/排不下）与「未安排住宿」缺口标记；点卡片展开备注与详情','日头右侧 📝 按钮写逐日备注'],
-  demo:'示范：京都第 1 天有长途交通段；第 2 天「锦市场小吃」与「二年坂」只隔 0 分钟 → 触发衔接过紧提示；大理第 2、4 天有住宿缺口；大理有两条逐日备注',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'plus',t:'条目表单 · 自然语言快速添加',d:'一行文字自动解析时间/费用/类型，确认后保存',
-  s:['时间轴任意「添加」或按 N 键打开表单','顶部输入「拉面 19:00 ¥1200」或「ramen at Ichiran 7pm ¥1200」→ 自动识别并填充，人工确认保存','表单里可设：状态（想法/已计划/已预订）、优先级（★必去）、时长、预订编号、锁定（优化排序不动）、含在另一张票（不计入总额）'],
-  demo:'示范：清水寺=★必去+已预订；二年坂=想法；苍山索道=已预订+锁定；上海虹桥 MU539 带「含在另一张票」的行李/接驳示例见机场大巴账目',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'file',t:'附件（登机牌/预订单/二维码）',d:'条目可挂图片或 PDF，离线可看',
-  s:['编辑条目 → 底部「添加附件」选图片或 PDF（每行程 ≤10 个、单文件 ≤5MB，存 IndexedDB）','附件列表点「查看」放大或下载'],
-  demo:'示范：京都第 1 天「上海浦东 → 大阪关西 MU539」已挂一张生成的登机牌图片——点该卡片展开 → 编辑 → 查看',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'alert',t:'冲突检测与一键修复',d:'时间重叠、衔接过紧、住宿缺口，每条带修复动作',
-  s:['打开行程详情，顶部列出所有冲突','每条右侧按钮：调整后一个时间 / 将后者移到下一天 / 添加住宿 / 忽略'],
-  demo:'示范：京都「二年坂→锦市场」步行约 20 分钟但间隔 0 分钟；大理第 2、4 天跨夜无住宿',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'refresh',t:'路线优化（最近邻 + 2-opt）',d:'一天内按地理位置重排顺序，锁定项不动、不改时间',
-  s:['某天「优化顺序」按钮（当天需 ≥3 个有坐标条目）','预览列表高亮被调整的项与前后总里程 → 「应用」才生效'],
-  demo:'示范：京都第 1 天 / 大理第 1 天都可试',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'sun',t:'旅行模式',d:'行程进行中的极简视图：只看今天 + 记一笔 + 写日记',
-  s:['行程详情顶部「旅行模式」开关（未出发也可手动开启预览）','大钟显示目的地当地时间；下方快捷「快速记一笔」「写一句日记」；其余天折叠成摘要条','关闭即恢复完整时间轴；状态按行程独立保存'],
-  demo:'示范：切换到大理行程开启试试（当地时钟/时差/日出日落来自目的地锦囊数据）',go:['tripDetail','{"tripId":"trp_dali","tab":"timeline"}']},
- {ic:'pin',t:'地图视图 · 探索周边',d:'序号针地图 + 本地 3km 探索，离线降级列表',
-  s:['详情页切「地图」标签：按天分色的序号针与虚线连线；「打开导航」跳高德或 Google（设置里可切换）','「探索周边」以某天第一个坐标点为中心列出 3km 内的灵感池条目与已有条目，可一键加入当天——纯本地计算，离线可用'],
-  demo:'示范：京都 15 个坐标点按天着色；京都第 1 天探索能看到关西机场与酒店',go:['tripDetail','{"tripId":"trp_kyoto","tab":"map"}']},
- {ic:'bulb',t:'灵感池',d:'独立于行程的候选地点池：剪藏、投票、安排到某天',
-  s:['「添加」或电脑端「读取剪贴板」一键剪藏链接/文字','▲▼ 投票计数，按票数或时间排序','勾选多条 → 「安排到某天」选行程+天 → 生成正式条目（可选择从池中删除或保留标记“已安排”）'],
-  demo:'示范：5 条灵感（沙溪古镇 3 票、京都贵船神社 4 票、带链接的剪藏等）',go:['inspirations',{}]},
- {ic:'wallet',t:'预算：聚合 · 上限 · 汇率 · 分摊',d:'预算条、分类聚合（估算 vs 实际）、多币种手动汇率、人均、分摊结算',
-  s:['预算条按使用率变绿/黄/红，超支时行程页顶部出现红色横幅提醒','「分类上限」设置后显示预算/实际/差额；多币种自动汇总（手动汇率，设置里可编辑或在线更新）；人均=总花费÷人数','「每日花费」柱状图对比日均预算，超日均的天数标 ⚠；预算总览含年度花费统计','「含在另一张票」的费用不计入总额但保留明细；「多人分摊」展开看谁该给谁多少','「快速记一笔」输入外币金额实时显示折算'],
-  demo:'示范：京都预算页——JPY 行程混 CNY 机票、餐饮/交通/活动上限、和服+居酒屋两笔分摊（我↔小林）、机场大巴标记“含在另一张票”',go:['budgetTrip','{"tripId":"trp_kyoto"}']},
- {ic:'pack',t:'打包清单',d:'按场景生成、模板、按人分配、天气建议、三级提醒、护照提醒',
-  s:['「按场景生成」选时长/天气/交通/同行/类型五项自动铺底','「从模板导入」含通用模板与 24 项行前任务清单；也可把当前清单存为个人模板','每项可分配给谁、加备注；顶部按人进度色点','电脑联网时「天气建议」逐条注明原因；出发前一天/当天系统通知 + 应用内横幅；设置里填护照到期日，临期 6 个月自动提醒'],
-  demo:'示范：大理清单 14 项（部分已打包、分配给我/阿伦/小满）',go:['packing',{}]},
- {ic:'edit',t:'旅行日记',d:'心情、天气/地点自动带入、单张照片、导出文本',
-  s:['「写日记」选第几天、点心情；天气点 🔄 自动取预报（电脑联网），地点自动填当天第一个有坐标条目','可加一张照片（自动压缩 ≤1MB）；按行程导出 .txt'],
-  demo:'示范：京都 2 篇日记——第 2 篇「清水寺的红叶」带一张示范照片与天气/地点',go:['journal',{}]},
- {ic:'image',t:'照片 EXIF 足迹（零输入）',d:'读照片 GPS 自动聚类成到访点，评审后写入足迹；全程不上传',
-  s:['足迹页或日记页「照片导入足迹」→ 选照片（或点下方示范按钮）','自动按时间(≤2h)+距离(≤1km)聚类；家/公司 300m 内标“日常”过滤；照片少或跨度异常标“待确认”','逐条选择「是到访/是途经/不是」→「写入足迹」；无 GPS 照片明确提示并给手动添加'],
-  demo:'示范：点下方按钮自动生成 4 张示范照片——2 张清水寺聚成一簇、1 张岚山独立成簇、1 张无 GPS 演示降级提示；自动识别已有地点命名',act:'piDemo'},
- {ic:'flag',t:'足迹世界地图',d:'可缩放世界地图按时间连线 + 国家统计 / 里程碑',
-  s:['「世界点亮」星图：去过的国家按经纬度亮起，带大陆轮廓与经纬网格，离线可用','「足迹世界地图」：①②③=时间顺序，虚线轨迹按年份着色，起点/最新标记；右上角图钉按钮叠加热力光圈（会自动滚到地图）','「世界足迹」卡合并了统计、国家点亮与里程碑：4 项统计 + 国家/地区方块（含首次年份、虚线=想去）+ 里程碑时间线','「年度回顾」生成 1080×1620 长图；右上角奖杯按钮看「个人图鉴」徽章墙；地点可打类别标签'],
-  demo:'示范：12 个点——2025 洱海、2025 武康大楼、2026 京都 9 处（含照片 EXIF 的清水寺）；国家卡：日本已去 + 泰国/法国/新西兰想去',go:['footprints',{}]},
- {ic:'globe',t:'离线常用语手册',d:'60 条中英对照 + 自定义，复制/全屏展示给当地人看',
-  s:['分类筛选 + 中英搜索；单条复制；点条目全屏大字','每条右侧喇叭按钮语音朗读（浏览器离线 TTS，朗读中再点一次停止）','「自定义」加任意语言的对照，持久保存；完全离线'],
-  demo:'示范：4 条日语自定义（不要辣/去这里可以吗…）；支持语音朗读，拍照翻译未纳入本版',go:['phrasebook',{}]},
- {ic:'utensils',t:'美食打卡 · 手信 · 每日穿搭',d:'Notion 模板同款：必打卡清单、伴手礼、按天穿搭',
-  s:['行程详情切到「打卡」标签','美食：添加店名+地址，标「必打卡/可打卡」，到了勾掉；排序必打卡在前','手信：想买的伴手礼与购买地点，买完勾掉','穿搭：按天填一行（如"吊带裙+罩衫"），勾选=已照穿'],
-  demo:'示范：京都 3 家美食（一兰已打卡）+ 2 件手信 + 5 天穿搭；大理 2 家美食',go:['tripDetail','{"tripId":"trp_kyoto","tab":"check"}']},
- {ic:'star',t:'条目评分与体验总结',d:'玩完打 1-5 星 + 一句话总结，回顾页自动汇总',
-  s:['时间轴点开条目 → 「评分」按钮打星并写总结（或编辑表单里填）','卡片显示 ★ 徽章，展开显示体验总结','行程结束后的「回顾」标签自动算均分并按评分排序展示'],
-  demo:'示范：京都行程 5 个条目已评分（清水寺 5 分、金阁寺 3 分…）',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'archive',t:'嵌套打包与最终核对',d:'子项装入父包（化妆包内 24 件），出门前最后一遍核对',
-  s:['打包条目菜单 → 「加入最终核对」：证件/充电宝这类漏带就完蛋的','打包页顶部出现「出行前最终核对」卡：逐项打勾，含未装包提示','编辑条目可选「装入」某个父项（如化妆包），子项缩进显示，进度按"└ 化妆包内 x/y 已备"统计（父包不重复计数）'],
-  demo:'示范：大理清单——化妆包含 4 件子项；身份证/护照/充电宝已加入最终核对',go:['packing',{}]},
- {ic:'send',t:'出发/返程信息 · 准备流程',d:'行程头部的出发/返程摘要 + 六步规划清单',
-  s:['行程信息卡自动从交通条目推断出发/返程，编辑行程时可手填覆盖（如"萧山 4/29 23:30 MU2568"）','「出发前流程」：确定行程→订机票→信息收集→规划→订酒店→设预算，可勾选并添加自定义步骤','「自定义提醒」：签证截止、退票截止、取票…设好日期，到当天/前一天首页横幅提醒；行程结束日自动提醒返程/退房','注意事项写在行程备注里，同样显示在头部'],
-  demo:'示范：京都行程头部显示 MU539/MU540 与流程 4/6；大理行程有 2 条自定义提醒（到点会在首页横幅提示）',go:['tripDetail','{"tripId":"trp_kyoto","tab":"timeline"}']},
- {ic:'flag',t:'愿望分类进度（灵感池）',d:'灵感按分类聚合：计划 n 条、已安排 m 条、进度条',
-  s:['灵感添加/编辑时填「分类」（城市/自然/美食/冒险…，可自定义）','灵感池顶部「愿望进度」卡按分类显示进度条——安排进行程即算实现','分类 chips 可筛选'],
-  demo:'示范：自然 2 条、美食 2 条、城市 1 条（贵船神社）',go:['inspirations',{}]},
- {ic:'archive',t:'数据与备份 · 工具',d:'全量备份/合并恢复、单行程导出、日历导出、打印 PDF、换算器、汇率在线更新',
-  s:['「导出备份」打包全部本地数据（不含 AI Key）；恢复可选合并（按 id 去重）或覆盖','单行程导出 JSON；行程更多菜单可导出 .ics 日历与打印 PDF','设置页底部：离线汇率换算（手动汇率）+ 公里/英里、°C/°F、kg/磅、升/加仑单位换算'],
-  demo:'示范：先「导出备份」再「导入备份-合并」体验去重',go:['backup','{"tab":"export"}']},
- {ic:'bell',t:'出发与证件提醒',d:'前一天/当天/离家 200 米 + 值机 + 护照临期',
-  s:['行程前一天与当天：系统通知（需授权）+ 应用内横幅','前一天若有交通条目（有机票/车票号），提醒可提前值机','设置「家的坐标」后，出发当天靠近家 200 米且清单未打包完 → 提醒（仅应用活跃时检查）','设置填护照到期日，距出行 6 个月内自动横幅'],
-  demo:'示范：护照有效期已填 2027-05-01 → 首页顶部应有一条“护照有效期仅剩约 6 个月”的横幅',go:['settings',{}]}
-];
-function pageGuide(){ return { html: topbar('功能导览','')
-  +`<div class="banner">${I('bulb',17)}<div class="b-txt">应用已内置一套完整示范数据（3 个行程、35+ 条目、账目、日记、足迹…），下面每一节都标了「去哪里看」。放心点、放心改——随时可在设置里「清除全部数据」重来，或先导出备份。</div></div>`
-  +GUIDE_SECS.map((sec,i)=>`<details class="card guide-sec" ${i===0?'open':''}>
-    <summary><span class="gs-ico">${I(sec.ic,18)}</span><span style="flex:1">${sec.t}<div class="gs-one">${sec.d}</div></span>${I('chevD',16)}</summary>
-    <div class="gs-body">
-      <ol>${sec.s.map(x=>`<li>${x}</li>`).join('')}</ol>
-      <div class="g-demo"><b>示范数据：</b>${sec.demo}</div>
-      <div class="g-go">${sec.go?`<button class="btn small primary" data-act="goPage" data-page="${sec.go[0]}" data-params='${typeof sec.go[1]==='string'?sec.go[1]:JSON.stringify(sec.go[1]||{})}'>${I('send',13)}去体验</button>`:''}
-        ${sec.act==='piDemo'?`<button class="btn small soft" data-act="piDemo">${I('sparkle',13)}生成示范照片并体验</button>`:''}</div>
-    </div></details>`).join('') }; }
-PAGES.guide=pageGuide;
-
 /* ==================== 示范内容生成器 ==================== */
 function makeBoardingPassDataURL(){ const c=document.createElement('canvas'); c.width=480; c.height=200; const x=c.getContext('2d');
   x.fillStyle='#f7f4ec'; x.fillRect(0,0,480,200); x.fillStyle='#2f6f9f'; x.fillRect(0,0,480,54);
@@ -5488,22 +5420,9 @@ function renderTzConverter(){ const box=$('#tzConvBox'); if(!box)return;
   upd(); }
 
 /* ==================== 存储空间管理 ==================== */
-function renderStorageBox(){ const box=$('#storageBox'); if(!box)return;
-  const tiles=getLS('tile_lru',[]).length, docs=getLS('doc_wallet',[]).length;
-  if(!navigator.storage||!navigator.storage.estimate){
-    box.innerHTML='<div class="set-row"><div class="sr-main">地图瓦片缓存<small>'+tiles+' 张（断网时可用）</small></div>'
-      +'<button class="btn tiny" data-act="storageClearTiles">清理</button></div>'
-      +'<div class="set-row"><div class="sr-main">证件包文件<small>'+docs+' 个</small></div></div>'; return; }
-  navigator.storage.estimate().then(es=>{
-    const usedMB=(es.usage||0)/1048576, quotaMB=(es.quota||0)/1048576;
-    box.innerHTML='<div class="set-row"><div class="sr-main">本机已用<small>'+usedMB.toFixed(1)+' MB'+(es.quota?' / 约 '+(quotaMB/1048576).toFixed(0)+' MB':'')+'</small></div></div>'
-      +'<div class="set-row"><div class="sr-main">地图瓦片缓存<small>'+tiles+' 张（断网可看已浏览区域，可随时清理）</small></div>'
-      +'<button class="btn tiny" data-act="storageClearTiles">清理</button></div>'
-      +'<div class="set-row"><div class="sr-main">证件包文件<small>'+docs+' 个（各行程菜单内管理）</small></div></div>'; }).catch(()=>{
-    box.innerHTML='<div class="tiny">无法读取空间信息</div>'; }); }
 ACTIONS.storageClearTiles=async()=>{ if(!await confirmDlg('清理全部地图瓦片缓存？清理后联网浏览地图时会重新下载。',{okText:'清理'}))return;
   const l=getLS('tile_lru',[]); for(const k of l)idbDel('tl_'+k); setLS('tile_lru',[]);
-  renderStorageBox(); toast('瓦片缓存已清理'); };
+  renderTileTip(); toast('瓦片缓存已清理'); };
 
 /* ==================== 语音输入（日记等，电脑 Chrome/Edge） ==================== */
 function attachSpeech(btn,ta,tip){
@@ -5766,6 +5685,17 @@ ACTIONS.aiTripAdvice=async d=>{ const t=DB.trips.find(x=>x.id===d.id); if(!t)ret
 /* ==================== 日记写作提示 ==================== */
 const J_PROMPTS=['今天最好吃的一顿是什么？在哪里吃的？','遇到了什么有趣的人或事？','今天看到的最美的一刻是什么？','有什么事让你印象深刻到想记下来？','今天学到了什么新东西？','如果用一句话总结今天，你会说什么？','今天有什么意外惊喜或小挫折？','你最想记住今天哪个瞬间？','有什么是你之前不知道、今天才发现的？','如果明天可以重来今天，你想改变什么？','今天走了多少路？脚累吗？值得吗？','拍了很多照片——哪一张背后的故事最精彩？','今天有没有让你想家的瞬间？','当地人的生活方式和你有什么不同？','给自己今天的表现打个分吧——为什么？'];
 
+/* ==================== 汇率历史 ==================== */
+function renderFxHistory(){ const box=$('#fxHistBox'); if(!box)return;
+  const hist=getLS('fx_history',[]);
+  if(!hist.length){ box.innerHTML='<div class="tiny">还没有记录。点上方「在线更新」后，每次拉到的汇率会存成一条快照。</div>'; return; }
+  const rows=hist.slice(-8).reverse().map(h=>{
+    const u=(h.rates&&h.rates.USD)?h.rates.USD:null;
+    const e=(h.rates&&h.rates.EUR)?h.rates.EUR:null;
+    const jp=(h.rates&&h.rates.JPY)?h.rates.JPY:null;
+    return `<div class="set-row"><div class="sr-main">${esc(h.date||'')}<small>${u?('1 USD = '+u+' CNY'):''}${e?' · EUR '+e:''}${jp?' · JPY '+jp:''}</small></div></div>`; }).join('');
+  box.innerHTML='<label class="f-label">最近 '+Math.min(hist.length,8)+' 次快照</label>'+rows; }
+
 /* ==================== 足迹热力图模式 ==================== */
 let _heatOn=false,_heatLayer=null;
 function applyHeatLayer(){
@@ -5807,20 +5737,6 @@ ACTIONS.tripRateSet=(d,el)=>{ const t=DB.trips.find(x=>x.id===d.id); if(!t)retur
 
 
 /* ==================== 关于卡：存储占用 / 记录容量 ==================== */
-async function renderAboutStorage(){ const s1=document.querySelector('#aboutStore'); const s2=document.querySelector('#aboutCap');
-  if(!s1||!s2)return;
-  try{
-    const est=await navigator.storage.estimate();
-    const usageB=est.usage||0; const quotaB=est.quota||0;
-    const usedMB=usageB/1048576; const quotaGB=quotaB/1073741824;
-    const pctTxt=quotaB>0?('约 '+Math.max(0.1,Math.round(usageB/quotaB*100000)/1000)+'%'):'—';
-    s1.innerHTML=(usedMB>=1?usedMB.toFixed(1)+' MB':Math.round(usageB/1024)+' KB')+' / '+quotaGB.toFixed(2)+' GB（'+pctTxt+'）（已用 / 本机可用配额）';
-    const cnt=(DB.items||[]).length;
-    const cap=quotaB>0?Math.floor(quotaB/2048):0;
-    const capTxt=cap>=10000?(cap/10000).toFixed(0)+' 万':String(cap);
-    s2.innerHTML=cnt+' 条 / 约 '+capTxt+' 条（按每条约 2.0 KB 估算）（已用 / 本机可用）';
-  }catch(e){ s1.textContent='—'; s2.textContent='—'; } }
-
 </script>
 <style>
 .a2hs-card{position:fixed;left:14px;right:14px;bottom:calc(70px + env(safe-area-inset-bottom));z-index:85;
@@ -5886,6 +5802,7 @@ try{PAGES.packing=pagePacking}catch(e){}
 try{PAGES.journal=pageJournal}catch(e){}
 try{PAGES.footprints=pageFootprints}catch(e){}
 try{PAGES.phrasebook=pagePhrasebook}catch(e){}
+try{PAGES.tools=pageTools}catch(e){}
 try{PAGES.settings=pageSettings}catch(e){}
 try{PAGES.backup=pageBackup}catch(e){}
 function boot(){ try{
